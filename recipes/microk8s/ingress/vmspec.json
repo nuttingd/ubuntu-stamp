@@ -1,0 +1,12 @@
+{
+    "disk": "20G",
+    "mem": "8G",
+    "cpus": 4,
+    "networks": [
+        {
+            "id": "External Switch",
+            "mode": "auto",
+            "mac": "10:10:10:10:AA:01"
+        }
+    ]
+}
