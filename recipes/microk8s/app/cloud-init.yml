@@ -15,7 +15,9 @@ runcmd:
   - microk8s enable dns storage rbac dashboard
   - echo Adding user ubuntu to microk8s group
   - usermod -a -G microk8s ubuntu
+  - mkdir -p /home/ubuntu/.kube
   - chown -f -R ubuntu /home/ubuntu/.kube
   - echo Adding user nuttingd to microk8s group
   - usermod -a -G microk8s nuttingd
+  - mkdir -p /home/nuttingd/.kube
   - chown -f -R nuttingd /home/nuttingd/.kube
