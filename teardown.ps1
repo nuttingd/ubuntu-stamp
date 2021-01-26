@@ -13,7 +13,7 @@ param (
 . .\functions.ps1
 
 # Must be admin for Hyper-V commands
-Require-Elevated
+Test-IsElevated
 
 $continue = Read-Host "Are you sure you want to teardown ${node}? Be sure checkpoints are merged, etc. 'yes' to continue."
 if ($continue -eq "yes") {

@@ -57,7 +57,7 @@ param (
 . .\functions.ps1
 
 # Must be admin for Hyper-V commands
-Require-Elevated
+Test-IsElevated
 
 # Construct node identifier
 $nodeId = "$Namespace-$Name-$Instance"
@@ -94,7 +94,7 @@ if ($PhaseVMCreate) {
 }
 # ---------- Phase VMConfig: Configuring VM ----------
 if ($PhaseVMConfig) {
-  Run-Hook -NodeId $nodeId -HookPath "/root/hooks/before-vm-config.sh"
+  Invoke-ProvisionHook -NodeId $nodeId -HookPath "/root/hooks/before-vm-config.sh"
 
   Write-Host "Configuring VM"
   Write-Host "Stopping $nodeId"
@@ -108,6 +108,6 @@ if ($PhaseVMConfig) {
   Wait-For-Node-Ready -NodeId $nodeId
 } # /if($phaseVMConfig)
 
-Run-Hook -NodeId $nodeId -HookPath "/root/hooks/bootstrap.sh"
+Invoke-ProvisionHook -NodeId $nodeId -HookPath "/root/hooks/bootstrap.sh"
 
 Write-Host "Done!"

@@ -1,4 +1,4 @@
-function Require-Elevated() {
+function Test-IsElevated() {
     if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
         Write-Error "Run this as admin ;)"
         Exit 1
@@ -6,7 +6,7 @@ function Require-Elevated() {
 }
 
 # source: https://stackoverflow.com/questions/8333455/how-to-loop-in-powershell-until-successful
-function Call-CommandWithRetries {
+function Invoke-CommandWithRetries {
     [CmdletBinding()]
     param( 
         [Parameter(Mandatory = $True)]
@@ -14,39 +14,37 @@ function Call-CommandWithRetries {
         [Array]$Arguments,
         [int]$RetrySleepSeconds = 10,
         [int]$MaxAttempts = 10,
-        [bool]$PrintCommand = $True
+        [bool]$ShowCommandOutput = $true
     )
 
     Process {
-        $attempt = 0
+        $attempt = 0            
+        Write-Verbose "Executing command ($MaxAttempts attempts): $Command $Arguments"
         while ($true) {   
-            Write-Host $(if ($PrintCommand) { "Executing: $Command $Arguments" } else { "Executing command..." }) 
-            & $Command $Arguments 2>&1 | Tee-Object -Variable output | Write-Host
+            
+            & $Command $Arguments 2>&1 | 
+            Tee-Object -Variable output | 
+            Where-Object { $ShowCommandOutput -eq $true } | 
+            Write-Host
 
             $stderr = $output | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] }
             if ( ($LASTEXITCODE -eq 0) ) {
-                Write-Host "Command executed successfully"
-                return $output
+                Write-Verbose "Command executed successfully"
+                return
             }
 
-            Write-Host "Command failed with exit code ($LASTEXITCODE) and stderr: $stderr" -ForegroundColor Yellow
+            Write-Verbose "Command failed with exit code ($LASTEXITCODE) and stderr: $stderr"
             if ($attempt -eq $MaxAttempts) {
-                $ex = new-object System.Management.Automation.CmdletInvocationException "All retry attempts exhausted"
-                $category = [System.Management.Automation.ErrorCategory]::LimitsExceeded
-                $errRecord = new-object System.Management.Automation.ErrorRecord $ex, "CommandFailed", $category, $Command
-                $psCmdlet.WriteError($errRecord)
-                return $output
+                throw "All retry attempts exhausted"
             }
 
             $attempt++;
-            Write-Host "Retrying test execution [#$attempt/$MaxAttempts] in $RetrySleepSeconds seconds..."
+            Write-Verbose "Retrying in $RetrySleepSeconds seconds... [#$attempt/$MaxAttempts] "
             Start-Sleep -s $RetrySleepSeconds
         }
     }
 }
 
-
-# source: https://stackoverflow.com/questions/8333455/how-to-loop-in-powershell-until-successful
 function Wait-For-Node-Ready {
     [CmdletBinding()]
     param( 
@@ -57,12 +55,12 @@ function Wait-For-Node-Ready {
     )
  
     Write-Host "Waiting for $NodeId to be ready"
-    Call-CommandWithRetries `
+    Invoke-CommandWithRetries `
         -Command "multipass.exe" `
         -Arguments @("exec", "$NodeId", "--", "exit" ) `
         -RetrySleepSeconds $RetrySleepSeconds `
         -MaxAttempts $MaxAttempts `
-        -PrintCommand $false
+        -ShowCommandOutput $false
 }
 
 function Wait-For-CloudInit-Completion {
@@ -78,14 +76,13 @@ function Wait-For-CloudInit-Completion {
     Write-Host "Waiting for Cloud-init completion"
     while ($true) {   
         # <https://stackoverflow.com/questions/33019093/how-do-detect-that-cloud-init-completed-initialization>
-        Write-Host "Checking /run/cloud-init/result.json"
+        Write-Verbose "Checking /run/cloud-init/result.json"
 
         multipass.exe exec $NodeId -- test -f /run/cloud-init/result.json
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "Result file found: /run/cloud-init/result.json"
+            Write-Verbose "Result file found: /run/cloud-init/result.json"
             $result_raw = multipass.exe exec $NodeId -- cat /run/cloud-init/result.json
-            #DEBUG: $result_raw = '{  "v1": {   "datasource": "DataSourceNoCloud [seed=/dev/sr0][dsmode=net]",   "errors": [1, 2, 3]  } }'
-            Write-Host "Cloud-init result:`r`n$result_raw"
+            Write-Verbose "Cloud-init result:`r`n$result_raw"
             $json = $result_raw | ConvertFrom-Json
 
             # TODO: This branching is all guess-work
@@ -95,35 +92,27 @@ function Wait-For-CloudInit-Completion {
                     return
                 }
                 else {
-                    $ex = new-object System.Management.Automation.CmdletInvocationException "Cloud-init errors detected"
-                    # $category = [System.Management.Automation.ErrorCategory]::LimitsExceeded
-                    # $errRecord = new-object System.Management.Automation.ErrorRecord $ex, "CommandFailed", $category, $Command
-                    # $psCmdlet.WriteError($errRecord)
-                    throw $ex
+                    throw "Cloud-init errors detected"
                 }
             }
         }
         else {
-            Write-Host "Result file doesn't yet exist: /run/cloud-init/result.json"
+            Write-Verbose "Result file doesn't yet exist: /run/cloud-init/result.json"
         }
         
-        Write-Host "Cloud-init not completed"
+        Write-Verbose "Cloud-init not completed"
         if ($attempt -eq $MaxAttempts) {
             $ex = new-object System.Management.Automation.CmdletInvocationException "All retry attempts exhausted"
-            # $category = [System.Management.Automation.ErrorCategory]::LimitsExceeded
-            # $errRecord = new-object System.Management.Automation.ErrorRecord $ex, "CommandFailed", $category, $Command
-            # $psCmdlet.WriteError($errRecord)
             throw $ex
         }
 
         $attempt++;
-        Write-Host "Retrying test execution [#$attempt/$MaxAttempts] in $RetrySleepSeconds seconds..."
+        Write-Verbose "Retrying test execution [#$attempt/$MaxAttempts] in $RetrySleepSeconds seconds..."
         Start-Sleep -s $RetrySleepSeconds
     }
 }
 
-
-function Run-Hook {
+function Invoke-ProvisionHook {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
@@ -134,5 +123,5 @@ function Run-Hook {
     )
     
     Write-Host "Running hook: $HookPath"
-    multipass.exe exec $NodeId -- sudo bash -c "(test -f $HookPath && bash $HookPath) || ls -la $HookPath"
+    multipass.exe exec $NodeId -- sudo bash -c "test -f $HookPath && bash $HookPath"
 }
