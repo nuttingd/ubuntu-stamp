@@ -10,7 +10,8 @@ param (
 )
 
 # Source functions
-. .\functions.ps1
+$rootDir = [System.IO.Path]::GetDirectoryName($MyInvocation.MyCommand.Path)
+. ${rootDir}\functions.ps1
 
 # Must be admin for Hyper-V commands
 Test-IsElevated
