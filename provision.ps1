@@ -73,8 +73,8 @@ if ($CloudInitFile) {
 }
 
 # add a `--network id=ABC...` option for each item in the networks array
-if ($json.networks) {
-  $networkArgs = ($json.networks |
+if ($vmSpec.networks) {
+  $networkArgs = ($vmSpec.networks |
     ForEach-Object { ($_.PSObject.Properties |
     ForEach-Object { $_.Name, $_.Value -join "=" } ) -join "," }) |
     ForEach-Object { "--network", $_ }
