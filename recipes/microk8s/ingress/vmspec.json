@@ -1,11 +1,5 @@
 {
     "disk": "20G",
-    "mem": "8G",
-    "cpus": 4,
-    "networks": [
-        {
-            "id": "External Switch",
-            "mode": "auto"
-        }
-    ]
+    "mem": "14G",
+    "cpus": 4
 }

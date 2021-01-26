@@ -2,12 +2,6 @@
 package_update: true
 package_upgrade: true
 
-users:
-  - name: nuttingd
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    ssh_import_id: gh:nuttingd
-    shell: /usr/bin/bash
-
 runcmd:
   - echo Installing microk8s
   - snap install microk8s --channel=1.19/edge --classic
@@ -17,7 +11,3 @@ runcmd:
   - usermod -a -G microk8s ubuntu
   - mkdir -p /home/ubuntu/.kube
   - chown -f -R ubuntu /home/ubuntu/.kube
-  - echo Adding user nuttingd to microk8s group
-  - usermod -a -G microk8s nuttingd
-  - mkdir -p /home/nuttingd/.kube
-  - chown -f -R nuttingd /home/nuttingd/.kube
