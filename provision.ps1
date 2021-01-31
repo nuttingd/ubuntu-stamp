@@ -8,15 +8,7 @@
 param (
   [Parameter(Mandatory = $true)]
   [string]
-  $Namespace,
-
-  [Parameter(Mandatory = $true)]
-  [string]
-  $Name,
-
-  [Parameter(Mandatory = $false)]
-  [string]
-  $Instance = (Get-Random).ToString("x"),
+  $Node,
 
   [Parameter(Mandatory = $true)]
   [ValidateScript( {
@@ -61,9 +53,6 @@ $rootDir = [System.IO.Path]::GetDirectoryName($MyInvocation.MyCommand.Path)
 # Must be admin for Hyper-V commands
 Test-IsElevated
 
-# Construct node identifier
-$nodeId = "$Namespace-$Name-$Instance"
-
 # Parse VM configuration parameters from JSON
 $vmSpec = (Get-Content $VMSpecFile | ConvertFrom-Json)
 
@@ -83,33 +72,33 @@ if ($vmSpec.networks) {
 
 # ---------- Phase VMCreate: Launching new node ----------
 if ($PhaseVMCreate) {
-  Write-Host "Creating node: $nodeId"
+  Write-Host "Creating node: $Node"
   multipass.exe launch `
-    --name $nodeId `
+    --name $Node `
     --disk $vmSpec.disk `
     --mem $vmSpec.mem `
     --cpus $vmSpec.cpus `
     $dynamicArgs
 
-  Wait-For-Node-Ready -NodeId $nodeId -RetrySleepSeconds 30
-  Wait-For-CloudInit-Completion -NodeId $nodeId
+  Wait-For-Node-Ready -Node $Node -RetrySleepSeconds 30
+  Wait-For-CloudInit-Completion -Node $Node
 }
 # ---------- Phase VMConfig: Configuring VM ----------
 if ($PhaseVMConfig) {
-  Invoke-ProvisionHook -NodeId $nodeId -HookPath "/root/hooks/before-vm-config.sh"
+  Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/before-vm-config.sh"
 
   Write-Host "Configuring VM"
-  Write-Host "Stopping $nodeId"
-  Stop-VM -Name $nodeId -Force
+  Write-Host "Stopping $Node"
+  Stop-VM -Name $Node -Force
   
   Write-Host "Turning off automatic checkpoints"
-  Set-VM -VMName $nodeId -AutomaticCheckpointsEnabled $false
+  Set-VM -VMName $Node -AutomaticCheckpointsEnabled $false
 
-  Write-Host "Starting $nodeId"
-  Start-VM -Name $nodeId
-  Wait-For-Node-Ready -NodeId $nodeId
+  Write-Host "Starting $Node"
+  Start-VM -Name $Node
+  Wait-For-Node-Ready -Node $Node
 } # /if($phaseVMConfig)
 
-Invoke-ProvisionHook -NodeId $nodeId -HookPath "/root/hooks/bootstrap.sh"
+Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/bootstrap.sh"
 
 Write-Host "Done!"
