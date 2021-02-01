@@ -94,6 +94,14 @@ if ($PhaseVMConfig) {
   Write-Host "Turning off automatic checkpoints"
   Set-VM -VMName $Node -AutomaticCheckpointsEnabled $false
 
+  # add a HDD for each item in the disks array
+  if ($vmSpec.disks) {
+    $vmSpec.disks | ForEach-Object { 
+      Write-Host "Attaching hard disk $_ to $Node"
+      Add-VMHardDiskDrive -VMName $Node -Path $_
+    }
+  }
+
   Write-Host "Starting $Node"
   Start-VM -Name $Node
   Wait-For-Node-Ready -Node $Node
