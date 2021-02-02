@@ -31,6 +31,8 @@ if ($Verbose) {
 }
 
 if ($Yes) {
+    # TODO: add a pre-teardown hook for things like backups
+
     # stopping before deleting helps avoid some buggy lock-ups w/ multipass
     multipass.exe stop $Node $verboseArg
     multipass.exe delete $Node $verboseArg
