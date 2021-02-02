@@ -45,6 +45,7 @@ param (
   $PhaseVMConfig = $true
 )
 
+$Verbose = $PSBoundParameters['Verbose']
 
 # Source functions
 $rootDir = [System.IO.Path]::GetDirectoryName($MyInvocation.MyCommand.Path)
@@ -58,7 +59,7 @@ $vmSpec = (Get-Content $VMSpecFile | ConvertFrom-Json)
 
 $dynamicArgs = @()
 if ($CloudInitFile) {
-  $dynamicArgs = $dynamicArgs + "--cloud-init", $CloudInitFile 
+  $dynamicArgs = $dynamicArgs + @("--cloud-init", $CloudInitFile)
 }
 
 # add a `--network id=ABC...` option for each item in the networks array
@@ -69,6 +70,11 @@ if ($vmSpec.networks) {
     ForEach-Object { "--network", $_ }
   $dynamicArgs = $dynamicArgs + $networkArgs
 }
+
+if ($Verbose) {
+  $dynamicArgs = $dynamicArgs + @("-vv")
+}
+
 
 # ---------- Phase VMCreate: Launching new node ----------
 if ($PhaseVMCreate) {
