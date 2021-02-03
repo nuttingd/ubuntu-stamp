@@ -27,11 +27,11 @@ Test-IsElevated
 
 $verboseArg = @()
 if ($Verbose) {
-  $verboseArg = @("-vv")
+  $verboseArg = @("-vvv")
 }
 
 if ($Yes) {
-    # TODO: add a pre-teardown hook for things like backups
+    Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/pre-teardown.sh"
 
     # stopping before deleting helps avoid some buggy lock-ups w/ multipass
     multipass.exe stop $Node $verboseArg
