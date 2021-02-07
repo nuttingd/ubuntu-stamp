@@ -60,9 +60,22 @@ if ($null -eq (Get-Module powershell-yaml)) {
 }
 
 $specItem = Get-Item $SpecFile
-$spec = $specItem | Get-Content | ConvertFrom-Yaml -Ordered
+$specRaw = $specItem | Get-Content
+$spec = $specRaw | ConvertFrom-Yaml -Ordered
 $meta = $spec.meta
 $node = "$($meta.namespace)-$($meta.name)-$Instance"
+$vars = $spec.vars
+
+# TODO, parameterize vars: vslues file? STAMP_ env vars? CLI args?
+# TODO: yeah yeah, not sanitizing inputs, etc. Be careful
+Write-Verbose "Substituting variables"
+foreach ($var in $vars.GetEnumerator()) {
+  $search = "{{ vars.$($var.Key) }}"
+  Write-Verbose "search: $search -> $($var.Value)"
+  $specRaw = $specRaw.Replace($search, $var.Value)
+}
+$spec = $specRaw | ConvertFrom-Yaml -Ordered
+
 $vmSpec = $spec.vm
 $cloudinitSpec = $spec["cloud-init"]
 $userdataSpec = $spec.userdata
