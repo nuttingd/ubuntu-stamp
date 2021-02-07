@@ -151,9 +151,6 @@ if ($PhaseCopyUserdata) {
   Invoke-ProvisionHook -Node $Node -HooksSpec $hooksSpec -HookName "before-copy-userdata"
 
   Write-Host "Copying userdata"
-
-  # TODO: create a validation step, or queue this work, at the beginning
-  #  this is a long time to wait before we know if there was a problem.
   if ($userdataSpec) {
     $userdataSpec | ForEach-Object { 
       $local = Get-Item (Join-Path $specItem.Directory $_.local -Resolve)
@@ -165,7 +162,7 @@ if ($PhaseCopyUserdata) {
 
         # Creating temporary mount
         $mount_source = if ($isDirectory) { $local.Parent } else { $local.Directory }
-        $tmp_mount_path = "/tmp/mnt-userdata"
+        $tmp_mount_path = "/tmp/userdata-$("$(New-Guid)".Substring(0,8))"
         $mount_target = "${Node}:$tmp_mount_path"
         Write-Host "Creating a temporary mount: $mount_source to $mount_target"
         multipass.exe mount $mount_source $mount_target $verboseArg
@@ -208,6 +205,7 @@ if ($PhaseCopyUserdata) {
     }
   }
 }
+
 # ---------- Phase Bootstrap: Running bootstrap script ----------
 if ($PhaseBootstrap) {
   Invoke-ProvisionHook -Node $Node -HooksSpec $hooksSpec -HookName "bootstrap"
