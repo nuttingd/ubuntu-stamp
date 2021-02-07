@@ -66,6 +66,7 @@ $node = "$($meta.namespace)-$($meta.name)-$Instance"
 $vmSpec = $spec.vm
 $cloudinitSpec = $spec["cloud-init"]
 $userdataSpec = $spec.userdata
+$hooksSpec = $spec.hooks
 
 Write-Host "Provisioning $Node using $SpecFile"
 Write-Verbose "vm spec:`n---`n$($vmSpec | ConvertTo-Yaml)"
@@ -123,7 +124,7 @@ if ($PhaseVMCreate) {
 
 # ---------- Phase VMConfig: Configuring VM ----------
 if ($PhaseVMConfig) {
-  Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/before-vm-config"
+  Invoke-ProvisionHook -Node $Node -HooksSpec $hooksSpec -HookName "before-vm-config"
 
   Write-Host "Configuring VM"
   Write-Host "Stopping $Node"
@@ -147,7 +148,7 @@ if ($PhaseVMConfig) {
 
 # ---------- Phase CopyUserdata: Copying userdata ----------
 if ($PhaseCopyUserdata) {
-  Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/before-copy-userdata"
+  Invoke-ProvisionHook -Node $Node -HooksSpec $hooksSpec -HookName "before-copy-userdata"
 
   Write-Host "Copying userdata"
 
@@ -209,7 +210,7 @@ if ($PhaseCopyUserdata) {
 }
 # ---------- Phase Bootstrap: Running bootstrap script ----------
 if ($PhaseBootstrap) {
-  Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/bootstrap"
+  Invoke-ProvisionHook -Node $Node -HooksSpec $hooksSpec -HookName "bootstrap"
 }
 
 Write-Host "Cleaning up"
