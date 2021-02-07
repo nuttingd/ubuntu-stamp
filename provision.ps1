@@ -68,21 +68,18 @@ $vars = $spec.vars
 
 # TODO, parameterize vars: vslues file? STAMP_ env vars? CLI args?
 # TODO: yeah yeah, not sanitizing inputs, etc. Be careful
-Write-Verbose "Substituting variables"
-foreach ($var in $vars.GetEnumerator()) {
-  $search = "{{ vars.$($var.Key) }}"
-  Write-Verbose "search: $search -> $($var.Value)"
-  $specRaw = $specRaw.Replace($search, $var.Value)
+if ($vars) {
+  Write-Verbose "Substituting variables"
+  foreach ($var in $vars.GetEnumerator()) {
+    $search = "{{ vars.$($var.Key) }}"
+    Write-Verbose "search: $search -> $($var.Value)"
+    $specRaw = $specRaw.Replace($search, $var.Value)
+  }
+  $spec = $specRaw | ConvertFrom-Yaml -Ordered
 }
-$spec = $specRaw | ConvertFrom-Yaml -Ordered
-
-$vmSpec = $spec.vm
-$cloudinitSpec = $spec["cloud-init"]
-$userdataSpec = $spec.userdata
-$hooksSpec = $spec.hooks
 
 Write-Host "Provisioning $Node using $SpecFile"
-Write-Verbose "vm spec:`n---`n$($vmSpec | ConvertTo-Yaml)"
+Write-Verbose "vm spec:`n---`n$($spec.vm | ConvertTo-Yaml)"
 
 # cloud-init
 New-Item .\.tmp -ItemType Directory -ea 0
@@ -90,17 +87,17 @@ $timestamp = "$([Math]::Round((Get-Date).ToFileTime()/10000))"
 $cloudInitFile = ".\.tmp\$timestamp-ci.yaml"
 Write-Verbose "Writing temporary cloud-init file: $cloudInitFile"
 "#cloud-config" | Out-File $cloudInitFile
-$cloudinitSpec | ConvertTo-Yaml | Out-File $cloudInitFile -Append
+$spec["cloud-init"] | ConvertTo-Yaml | Out-File $cloudInitFile -Append
 
 # ---------- Build multipass arguments list ----------
-$dynamicArgs = @()
+$multipassArgs = @("--name", $Node)
 if ($cloudInitFile) {
-  $dynamicArgs = $dynamicArgs + @("--cloud-init", $cloudInitFile)
+  $multipassArgs = $multipassArgs + @("--cloud-init", $cloudInitFile)
 }
 
 # add a `--network id=ABC...` option for each item in the networks array
-if ($vmSpec.networks) {
-  $networkArgs = ($vmSpec.networks |
+if ($spec.vm.networks) {
+  $networkArgs = ($spec.vm.networks |
     ForEach-Object { 
       ($_.GetEnumerator() | 
         ForEach-Object { $_.Key, $_.Value -join "=" }
@@ -108,36 +105,31 @@ if ($vmSpec.networks) {
     }
   ) | ForEach-Object { "--network", $_ }
 
-  $dynamicArgs = $dynamicArgs + $networkArgs
+  $multipassArgs = $multipassArgs + $networkArgs
 }
+
+if ($spec.vm.disk) { $multipassArgs = $multipassArgs + @("--disk", $spec.vm.disk) }
+if ($spec.vm.mem) { $multipassArgs = $multipassArgs + @("--mem", $spec.vm.mem) }
+if ($spec.vm.cpus) { $multipassArgs = $multipassArgs + @("--cpus", $spec.vm.cpus) }
 
 $verboseArg = @()
 if ($Verbose) {
   $verboseArg = @("-vvv")
 }
-$dynamicArgs = $dynamicArgs + $verboseArg
-
-Write-Verbose "networkArgs: $networkArgs"
-Write-Verbose "verboseArg: $verboseArg"
-Write-Verbose "dynamicArgs: $dynamicArgs"
+$multipassArgs = $multipassArgs + $verboseArg
+Write-Verbose "Multipass arguments: $multipassArgs"
 
 # ---------- Phase VMCreate: Launching new node ----------
 if ($PhaseVMCreate) {
   Write-Host "Creating node: $Node"
-  multipass.exe launch `
-    --name $Node `
-    --disk $vmSpec.disk `
-    --mem $vmSpec.mem `
-    --cpus $vmSpec.cpus `
-    $dynamicArgs
-
+  multipass.exe launch $multipassArgs
   Wait-For-Node-Ready -Node $Node -RetrySleepSeconds 30
   Wait-For-CloudInit-Completion -Node $Node
 }
 
 # ---------- Phase VMConfig: Configuring VM ----------
 if ($PhaseVMConfig) {
-  Invoke-ProvisionHook -Node $Node -HooksSpec $hooksSpec -HookName "before-vm-config"
+  Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "before-vm-config"
 
   Write-Host "Configuring VM"
   Write-Host "Stopping $Node"
@@ -147,8 +139,8 @@ if ($PhaseVMConfig) {
   Set-VM -VMName $Node -AutomaticCheckpointsEnabled $false
 
   # add a HDD for each item in the disks array
-  if ($vmSpec.disks) {
-    $vmSpec.disks | ForEach-Object { 
+  if ($spec.vm.disks) {
+    $spec.vm.disks | ForEach-Object { 
       Write-Host "Attaching hard disk $_ to $Node"
       Add-VMHardDiskDrive -VMName $Node -Path $_
     }
@@ -161,11 +153,11 @@ if ($PhaseVMConfig) {
 
 # ---------- Phase CopyUserdata: Copying userdata ----------
 if ($PhaseCopyUserdata) {
-  Invoke-ProvisionHook -Node $Node -HooksSpec $hooksSpec -HookName "before-copy-userdata"
+  Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "before-copy-userdata"
 
   Write-Host "Copying userdata"
-  if ($userdataSpec) {
-    $userdataSpec | ForEach-Object { 
+  if ($spec.userdata) {
+    $spec.userdata | ForEach-Object { 
       $local = Get-Item (Join-Path $specItem.Directory $_.local -Resolve)
       $target = $_.target 
       if ($local && $target) {
@@ -221,7 +213,7 @@ if ($PhaseCopyUserdata) {
 
 # ---------- Phase Bootstrap: Running bootstrap script ----------
 if ($PhaseBootstrap) {
-  Invoke-ProvisionHook -Node $Node -HooksSpec $hooksSpec -HookName "bootstrap"
+  Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "bootstrap"
 }
 
 Write-Host "Cleaning up"
