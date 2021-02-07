@@ -20,14 +20,11 @@ A thin wrapper for Multipass using Powershell, held together by duct-tape, balin
 - (Optional) Create an External Switch in Hyper-V
   - I used to script this. The code was fragile and ridiculous to maintain when I would run it only once. 
 
-## Hooks
+## spec.yaml
+TODO
 
-The provisioner will call the following hooks:
-- `/root/hooks/before-vm-config.sh`
-  - Called after cloud-init, before powering down VM for additional configuration
-- `/root/hooks/bootstrap.sh`
-  - Called after starting up VM after additional configuration
-  - Meant for additional user scripts to finalize bootstrapping the machine
+## Hooks
+TODO
 
 ## Future
 - Desired state based on GitOps... kidding, use Terraform or something
