@@ -49,15 +49,15 @@ function Wait-For-Node-Ready {
     [CmdletBinding()]
     param( 
         [Parameter(Mandatory = $true)]
-        [string]$NodeId,
+        [string]$Node,
         [int]$RetrySleepSeconds = 15,
         [int]$MaxAttempts = 10
     )
  
-    Write-Host "Waiting for $NodeId to be ready"
+    Write-Host "Waiting for $Node to be ready"
     Invoke-CommandWithRetries `
         -Command "multipass.exe" `
-        -Arguments @("exec", "$NodeId", "--", "exit" ) `
+        -Arguments @("exec", "$Node", "--", "exit" ) `
         -RetrySleepSeconds $RetrySleepSeconds `
         -MaxAttempts $MaxAttempts `
         -ShowCommandOutput $false
@@ -67,7 +67,7 @@ function Wait-For-CloudInit-Completion {
     [CmdletBinding()]
     param( 
         [Parameter(Mandatory = $true)]
-        [string]$NodeId,
+        [string]$Node,
         [int]$RetrySleepSeconds = 15,
         [int]$MaxAttempts = 10
     )
@@ -78,10 +78,10 @@ function Wait-For-CloudInit-Completion {
         # <https://stackoverflow.com/questions/33019093/how-do-detect-that-cloud-init-completed-initialization>
         Write-Verbose "Checking /run/cloud-init/result.json"
 
-        multipass.exe exec $NodeId -- test -f /run/cloud-init/result.json
+        multipass.exe exec $Node -- test -f /run/cloud-init/result.json
         if ($LASTEXITCODE -eq 0) {
             Write-Verbose "Result file found: /run/cloud-init/result.json"
-            $result_raw = multipass.exe exec $NodeId -- cat /run/cloud-init/result.json
+            $result_raw = multipass.exe exec $Node -- cat /run/cloud-init/result.json
             Write-Verbose "Cloud-init result:`r`n$result_raw"
             $json = $result_raw | ConvertFrom-Json
 
@@ -116,12 +116,12 @@ function Invoke-ProvisionHook {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$NodeId,
+        [string]$Node,
 
         [Parameter(Mandatory = $true)]
         [string]$HookPath
     )
     
     Write-Host "Running hook: $HookPath"
-    multipass.exe exec $NodeId -- sudo bash -c "test -f $HookPath && chmod +x $HookPath && $HookPath"
+    multipass.exe exec $Node -- sudo bash -c "test -f $HookPath && chmod +x $HookPath && $HookPath"
 }

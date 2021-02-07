@@ -37,7 +37,11 @@ param (
   
   [Parameter(Mandatory = $false)]
   [bool]
-  $PhaseBootstrap = $true
+  $PhaseBootstrap = $true,
+
+  [Parameter(Mandatory = $false)]
+  [bool]
+  $Cleanup = $true
 )
 
 $Verbose = $PSBoundParameters['Verbose']
@@ -61,6 +65,10 @@ $meta = $spec.meta
 $node = "$($meta.namespace)-$($meta.name)-$Instance"
 $vmSpec = $spec.vm
 $cloudinitSpec = $spec["cloud-init"]
+$userdataSpec = $spec.userdata
+
+Write-Host "Provisioning $Node using $SpecFile"
+Write-Verbose "vm spec:`n---`n$($vmSpec | ConvertTo-Yaml)"
 
 # cloud-init
 New-Item .\.tmp -ItemType Directory -ea 0
@@ -145,8 +153,8 @@ if ($PhaseCopyUserdata) {
 
   # TODO: create a validation step, or queue this work, at the beginning
   #  this is a long time to wait before we know if there was a problem.
-  if ($vmSpec.userdata) {
-    $vmSpec.userdata | ForEach-Object { 
+  if ($userdataSpec) {
+    $userdataSpec | ForEach-Object { 
       $local = Get-Item (Join-Path $specItem.Directory $_.local -Resolve)
       $target = $_.target 
       if ($local && $target) {
@@ -203,5 +211,9 @@ if ($PhaseCopyUserdata) {
 if ($PhaseBootstrap) {
   Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/bootstrap"
 }
+
+Write-Host "Cleaning up"
+Write-Verbose "Deleting temporary cloud-init file: $cloudInitFile"
+Remove-Item -Path $cloudInitFile
 
 Write-Host "Done!"
