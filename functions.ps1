@@ -123,5 +123,5 @@ function Invoke-ProvisionHook {
     )
     
     Write-Host "Running hook: $HookPath"
-    multipass.exe exec $NodeId -- sudo bash -c "test -f $HookPath && bash $HookPath"
+    multipass.exe exec $NodeId -- sudo bash -c "test -f $HookPath && chmod +x $HookPath && $HookPath"
 }

@@ -7,34 +7,21 @@
 [CmdletBinding()]
 param (
   [Parameter(Mandatory = $true)]
-  [string]
-  $Node,
+  [ValidateScript( {
+      if (-Not ($_ | Test-Path) ) {
+        throw "File or folder does not exist" 
+      }
+      if (-Not ($_ | Test-Path -PathType Leaf) ) {
+        throw "The Path argument must be a file. Folder paths are not allowed."
+      }
+      return $true
+    })]
+  [System.IO.FileInfo]
+  $SpecFile,
 
-  [Parameter(Mandatory = $true)]
-  [ValidateScript( {
-      if (-Not ($_ | Test-Path) ) {
-        throw "File or folder does not exist" 
-      }
-      if (-Not ($_ | Test-Path -PathType Leaf) ) {
-        throw "The Path argument must be a file. Folder paths are not allowed."
-      }
-      return $true
-    })]
-  [System.IO.FileInfo]
-  $VMSpecFile,
-    
-  [Parameter(Mandatory = $false)] # required for now, but I would like it to be optional. Need to figure out how to conditionally include the --cloud-init arg to multipass
-  [ValidateScript( {
-      if (-Not ($_ | Test-Path) ) {
-        throw "File or folder does not exist" 
-      }
-      if (-Not ($_ | Test-Path -PathType Leaf) ) {
-        throw "The Path argument must be a file. Folder paths are not allowed."
-      }
-      return $true
-    })]
-  [System.IO.FileInfo]
-  $CloudInitFile = $null,
+  [Parameter(Mandatory=$true)]
+  [string]
+  $Instance,
 
   [Parameter(Mandatory = $false)]
   [bool]
@@ -42,7 +29,15 @@ param (
 
   [Parameter(Mandatory = $false)]
   [bool]
-  $PhaseVMConfig = $true
+  $PhaseVMConfig = $true,
+
+  [Parameter(Mandatory = $false)]
+  [bool]
+  $PhaseCopyUserdata = $true,
+  
+  [Parameter(Mandatory = $false)]
+  [bool]
+  $PhaseBootstrap = $true
 )
 
 $Verbose = $PSBoundParameters['Verbose']
@@ -54,27 +49,55 @@ $rootDir = [System.IO.Path]::GetDirectoryName($MyInvocation.MyCommand.Path)
 # Must be admin for Hyper-V commands
 Test-IsElevated
 
-# Parse VM configuration parameters from JSON
-$vmSpec = (Get-Content $VMSpecFile | ConvertFrom-Json)
+# ---------- Reading and decomposing spec YAML ----------
+if ($null -eq (Get-Module powershell-yaml)) {
+  Write-Host "Installing powershell-yaml"
+  Install-Module powershell-yaml
+}
 
+$specItem = Get-Item $SpecFile
+$spec = $specItem | Get-Content | ConvertFrom-Yaml -Ordered
+$meta = $spec.meta
+$node = "$($meta.namespace)-$($meta.name)-$Instance"
+$vmSpec = $spec.vm
+$cloudinitSpec = $spec["cloud-init"]
+
+# cloud-init
+New-Item .\.tmp -ItemType Directory -ea 0
+$timestamp = "$([Math]::Round((Get-Date).ToFileTime()/10000))"
+$cloudInitFile = ".\.tmp\$timestamp-ci.yaml"
+Write-Verbose "Writing temporary cloud-init file: $cloudInitFile"
+"#cloud-config" | Out-File $cloudInitFile
+$cloudinitSpec | ConvertTo-Yaml | Out-File $cloudInitFile -Append
+
+# ---------- Build multipass arguments list ----------
 $dynamicArgs = @()
-if ($CloudInitFile) {
-  $dynamicArgs = $dynamicArgs + @("--cloud-init", $CloudInitFile)
+if ($cloudInitFile) {
+  $dynamicArgs = $dynamicArgs + @("--cloud-init", $cloudInitFile)
 }
 
 # add a `--network id=ABC...` option for each item in the networks array
 if ($vmSpec.networks) {
   $networkArgs = ($vmSpec.networks |
-    ForEach-Object { ($_.PSObject.Properties |
-    ForEach-Object { $_.Name, $_.Value -join "=" } ) -join "," }) |
-    ForEach-Object { "--network", $_ }
+    ForEach-Object { 
+      ($_.GetEnumerator() | 
+        ForEach-Object { $_.Key, $_.Value -join "=" }
+      ) -join "," 
+    }
+  ) | ForEach-Object { "--network", $_ }
+
   $dynamicArgs = $dynamicArgs + $networkArgs
 }
 
+$verboseArg = @()
 if ($Verbose) {
-  $dynamicArgs = $dynamicArgs + @("-vv")
+  $verboseArg = @("-vvv")
 }
+$dynamicArgs = $dynamicArgs + $verboseArg
 
+Write-Verbose "networkArgs: $networkArgs"
+Write-Verbose "verboseArg: $verboseArg"
+Write-Verbose "dynamicArgs: $dynamicArgs"
 
 # ---------- Phase VMCreate: Launching new node ----------
 if ($PhaseVMCreate) {
@@ -89,9 +112,10 @@ if ($PhaseVMCreate) {
   Wait-For-Node-Ready -Node $Node -RetrySleepSeconds 30
   Wait-For-CloudInit-Completion -Node $Node
 }
+
 # ---------- Phase VMConfig: Configuring VM ----------
 if ($PhaseVMConfig) {
-  Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/before-vm-config.sh"
+  Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/before-vm-config"
 
   Write-Host "Configuring VM"
   Write-Host "Stopping $Node"
@@ -111,8 +135,73 @@ if ($PhaseVMConfig) {
   Write-Host "Starting $Node"
   Start-VM -Name $Node
   Wait-For-Node-Ready -Node $Node
-} # /if($phaseVMConfig)
+}
 
-Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/bootstrap.sh"
+# ---------- Phase CopyUserdata: Copying userdata ----------
+if ($PhaseCopyUserdata) {
+  Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/before-copy-userdata"
+
+  Write-Host "Copying userdata"
+
+  # TODO: create a validation step, or queue this work, at the beginning
+  #  this is a long time to wait before we know if there was a problem.
+  if ($vmSpec.userdata) {
+    $vmSpec.userdata | ForEach-Object { 
+      $local = Get-Item (Join-Path $specItem.Directory $_.local -Resolve)
+      $target = $_.target 
+      if ($local && $target) {
+        $permissions = $_.permissions ?? "0770"
+        $owner = $_.owner ?? "root"
+        $isDirectory = $local.PSIsContainer
+
+        # Creating temporary mount
+        $mount_source = if ($isDirectory) { $local.Parent } else { $local.Directory }
+        $tmp_mount_path = "/tmp/mnt-userdata"
+        $mount_target = "${Node}:$tmp_mount_path"
+        Write-Host "Creating a temporary mount: $mount_source to $mount_target"
+        multipass.exe mount $mount_source $mount_target $verboseArg
+
+        # Copying file(s)
+        if ($isDirectory) {
+          # using rsync to avoid the contextual gotchas of cp (for idempotency / deterministic behavior)
+          $copy_directory_cmd = "rsync -rt $tmp_mount_path/$($local.Name)/ $target/"
+          Write-Verbose "cmd: $copy_directory_cmd"
+          multipass.exe exec $Node -- sudo bash -c $copy_directory_cmd
+        }
+        else {
+          Write-Host "Copying $($local.Name) to ${Node}:$target"
+          $copy_file_cmd = "mkdir -p ``dirname $target`` && cp $tmp_mount_path/$($local.Name) $target"
+          Write-Verbose "cmd: $copy_file_cmd"
+          multipass.exe exec $Node -- sudo bash -c $copy_file_cmd
+        }
+
+        # Unmount
+        Write-Host "Unmounting temporary mount"
+        multipass.exe unmount $mount_target $verboseArg
+
+        # Set file permissions
+        Write-Host "Setting file permissions"
+        $recursive = if ($isDirectory) {"-R "} else {""}
+        
+        Write-Verbose "Changing owner to $owner"
+        $change_owner_cmd = "chown $recursive $owner $target"
+        Write-Verbose "cmd: $change_owner_cmd"
+        multipass.exe exec $Node -- sudo bash -c $change_owner_cmd
+        
+        Write-Verbose "Changing permissions to $permissions"
+        $change_permissions_cmd = "chmod $recursive $permissions $target"
+        Write-Verbose "cmd: $change_permissions_cmd"
+        multipass.exe exec $Node -- sudo bash -c $change_permissions_cmd
+      }
+      else {
+        Write-Error "There was a problem copying user data.`n`tlocal: $($_.local)`n`ttarget: $($_.target)"
+      }
+    }
+  }
+}
+# ---------- Phase Bootstrap: Running bootstrap script ----------
+if ($PhaseBootstrap) {
+  Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/bootstrap"
+}
 
 Write-Host "Done!"
