@@ -31,7 +31,7 @@ if ($Verbose) {
 }
 
 if ($Yes) {
-    Invoke-ProvisionHook -Node $Node -HookPath "/root/hooks/pre-teardown.sh"
+    Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "teardown" -Throw
 
     # stopping before deleting helps avoid some buggy lock-ups w/ multipass
     multipass.exe stop $Node $verboseArg

@@ -122,14 +122,24 @@ function Invoke-ProvisionHook {
         [object]$HooksSpec,
 
         [Parameter(Mandatory = $true)]
-        [string]$HookName
+        [string]$HookName,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$Throw = $false
     )
+
     $HookPath = $HooksSpec[$HookName]
     if ($HookPath) {
         Write-Host "Running hook: $HookPath"
         multipass.exe exec $Node -- sudo bash -c "test -f $HookPath && chmod +x $HookPath && $HookPath"
+        if ($Throw && !$?) {
+            throw "There was a problem running hook $HookName, which resolved to path: $HookPath. Please review necessary logs and any output that immediately preceding this message."
+        }
+
+        return $?
     }
     else {
         Write-Verbose "No hook defined for $HookName"
+        return $true
     }
 }

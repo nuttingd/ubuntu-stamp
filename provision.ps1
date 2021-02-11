@@ -129,7 +129,7 @@ if ($PhaseVMCreate) {
 
 # ---------- Phase VMConfig: Configuring VM ----------
 if ($PhaseVMConfig) {
-  Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "before-vm-config"
+  Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "before-vm-config" -Throw
 
   Write-Host "Configuring VM"
   Write-Host "Stopping $Node"
@@ -153,7 +153,7 @@ if ($PhaseVMConfig) {
 
 # ---------- Phase CopyUserdata: Copying userdata ----------
 if ($PhaseCopyUserdata) {
-  Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "before-copy-userdata"
+  Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "before-copy-userdata" -Throw
 
   Write-Host "Copying userdata"
   if ($spec.userdata) {
@@ -213,7 +213,8 @@ if ($PhaseCopyUserdata) {
 
 # ---------- Phase Bootstrap: Running bootstrap script ----------
 if ($PhaseBootstrap) {
-  Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "bootstrap"
+  $hookResult = Invoke-ProvisionHook -Node $Node -HooksSpec $spec.hooks -HookName "bootstrap"
+  if (!$hookResult) { Write-Error "There was a problem with the bootstrap script! Please review the output and take corrective action." }
 }
 
 Write-Host "Cleaning up"
