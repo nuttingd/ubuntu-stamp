@@ -132,7 +132,7 @@ function Invoke-ProvisionHook {
     if ($HookPath) {
         Write-Host "Running hook: $HookPath"
         multipass.exe exec $Node -- sudo bash -c "test -f $HookPath && chmod +x $HookPath && $HookPath"
-        if ($Throw && !$?) {
+        if ($Throw -and -not $?) {
             throw "There was a problem running hook $HookName, which resolved to path: $HookPath. Please review necessary logs and any output that immediately preceding this message."
         }
 
