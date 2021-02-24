@@ -25,6 +25,3 @@ TODO
 
 ## Hooks
 TODO
-
-## Future
-- Desired state based on GitOps... kidding, use Terraform or something
